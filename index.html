@@ -1,151 +1,150 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>FROG</title>
   <style>
-    body { margin:0;font-family:monospace;}
-    canvas { display:block; margin:0 auto; image-rendering: pixelated; image-rendering: crisp-edges;}
-    .hud { position:fixed; left:8px; top:8px; color:#111; }
+    body {font-family:monospace}
+    canvas {display:block; margin:0 auto;}
   </style>
 </head>
 <body>
-  <div class="hud" id="hud">distance: 0</div>
   <canvas id="game" width="800" height="360"></canvas>
+  <div style="display: flex; margin-top: 3rem;">
+    <div id="hud" style="display:block; margin:0 auto;">distance: 0</div>
+  </div>
 
 <script>
-    const platformSprites = {
+  const platformSprites = {
     leftTop:  {x:0,  y:16, w:8, h:8}, // 왼쪽 끝(위)
     midTop:   {x:24, y:0,  w:8, h:8}, // 가운데 타일(ㅡ)
     rightTop: {x:16, y:8,  w:8, h:8}, // 오른쪽 끝(위)
     pillarL:  {x:16, y:16, w:8, h:8}, // 왼쪽 기둥 외벽
     pillarR:  {x:24, y:8 , w:8, h:8}, // 오른쪽 기둥 외벽
-    pillarInner: {x:24, y:16, w:8, h:8}, // 기둥 내부 채우기용
-    };
+    pillarInner: {x:24, y:16, w:8, h:8}, // 기둥 내부 채우기용 - 사실 필요없음
+  };
 
-/* -----------------------
-  엔진/캐릭터 설정
-------------------------*/
-    const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
-    const hud = document.getElementById('hud');
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  // const hud = document.getElementById('hud');
+  ctx.imageSmoothingEnabled = false;
 
-    const sprite = new Image();
-    sprite.src = 'assets/FROG.png';
+  const sprite = new Image();
+  sprite.src = 'assets/FROG.png';
 
-    const dinoFrames = [
+  const dinoFrames = [
     {x:0,y:0,w:8,h:8},   // 0: 기본
-    {x:8,y:0,w:8,h:8},  // 1: 충전
+    {x:8,y:0,w:8,h:8},   // 1: 충전
     {x:16,y:0,w:8,h:8},  // 2
-    {x:0,y:8,w:8,h:8},  // 3
-    {x:8,y:8,w:8,h:8}, // 4
-    {x:8,y:0,w:8,h:8}, // 5
-    ];
+    {x:0,y:8,w:8,h:8},   // 3
+    {x:8,y:8,w:8,h:8},   // 4
+    {x:8,y:0,w:8,h:8},   // 5
+  ];
 
-const standingFrameIndex = 0; // 기본 상태
-const holdingFrameIndex = 1;  // 충전 상태
-const jumpAnimStart = 2;
-const jumpAnimEnd = 5;
-let landingFrameIndex = 6;
+  // 상태 프레임 순서
+  const standingFrameIndex = 0; // 기본 상태
+  const holdingFrameIndex = 1;  // 충전 상태
+  const jumpAnimStart = 2;
+  const jumpAnimEnd = 5;
+  let landingFrameIndex = 6; //?
 if (!dinoFrames[landingFrameIndex]) landingFrameIndex = jumpAnimEnd;
 
-const scale = 3;
-const platformScale = scale;
+  const scale = 3;
+  const platformScale = scale;
 
-let posX = 0;
-let posY = 0;
-let velX = 0;
-let velY = 0;
-let isJumping = false;
-let isHolding = false;
-let holdStartTime = 0;
+  let posX = 0;
+  let posY = 0;
+  let velX = 0;
+  let velY = 0;
+  let isJumping = false;
+  let isHolding = false;
+  let holdStartTime = 0;
 
-const gravity = 0.7;
-const minSpeed = 9.0;
-const maxSpeed = 17.0;
-const maxChargeMs = 1200;
+  const gravity = 0.7;
+  const minSpeed = 9.0;
+  const maxSpeed = 17.0;
+  const maxChargeMs = 1000;
 
-const minAngleDeg = 5;
-const maxAngleDeg = 85;
+  const minAngleDeg = 3; // 원래는 5
+  const maxAngleDeg = 85;
 
-let currentFrameIndex = standingFrameIndex;
-let frameTick = 0;
-let jumpFrameSpeed = 8;
-let isLandingShown = false;
-let landingShownAt = 0;
-const landingHoldMs = 160;
+  let currentFrameIndex = standingFrameIndex;
+  let frameTick = 0;
+  let jumpFrameSpeed = 8;
+  let isLandingShown = false;
+  let landingShownAt = 0;
+  const landingHoldMs = 160;
 
-class Platform {
-  constructor(x, topY, tiles) {
-    this.x = x;
-    this.topY = topY;
-    this.tiles = Math.max(1, tiles);
-    this.width = (platformSprites.leftTop.w + platformSprites.midTop.w * this.tiles + platformSprites.rightTop.w) * platformScale;
-    this.hasLeftPillar = Math.random() < 0.6;
-    this.hasRightPillar = Math.random() < 0.6;
-  }
-
-  render(cameraX) {
-    const screenX = Math.round(this.x - cameraX);
-    const topY = Math.round(this.topY);
-    
-    // 플랫폼 상단 렌더링
-    drawAtlas(platformSprites.leftTop, screenX, topY);
-    let midX = screenX + platformSprites.leftTop.w * platformScale;
-    for (let i = 0; i < this.tiles; i++) {
-      drawAtlas(platformSprites.midTop, midX, topY);
-      midX += platformSprites.midTop.w * platformScale;
+  class Platform {
+    constructor(x, topY, tiles) {
+      this.x = x;
+      this.topY = topY;
+      this.tiles = Math.max(1, tiles);
+      this.width = (platformSprites.leftTop.w + platformSprites.midTop.w * this.tiles + platformSprites.rightTop.w) * platformScale;
+      this.hasLeftPillar = 1;
+      this.hasRightPillar = 1;
     }
-    drawAtlas(platformSprites.rightTop, midX, topY);
 
-    const pillarW = platformSprites.pillarL.w * platformScale;
-    const pillarH = platformSprites.pillarL.h * platformScale;
-    
-    // 왼쪽 기둥 렌더링 (y=0까지)
-    if (this.hasLeftPillar) {
-      const leftPillarX = screenX;
-      const platformWidth = platformSprites.leftTop.w * platformScale;
+    render(cameraX) {
+      const screenX = Math.round(this.x - cameraX);
+      const topY = Math.round(this.topY);
       
-      let py = topY + platformSprites.leftTop.h * platformScale;
-      while (py < canvas.height) {
-        // 외벽 (가장 왼쪽)
-        drawAtlas(platformSprites.pillarL, leftPillarX, py);
+      // 플랫폼 상단 렌더링
+      drawAtlas(platformSprites.leftTop, screenX, topY);
+      let midX = screenX + platformSprites.leftTop.w * platformScale;
+      for (let i = 0; i < this.tiles; i++) {
+        drawAtlas(platformSprites.midTop, midX, topY);
+        midX += platformSprites.midTop.w * platformScale;
+      }
+      drawAtlas(platformSprites.rightTop, midX, topY);
+
+      const pillarW = platformSprites.pillarL.w * platformScale;
+      const pillarH = platformSprites.pillarL.h * platformScale;
+      
+      // 왼쪽 기둥 렌더링 (y=0까지)
+      if (this.hasLeftPillar) {
+        const leftPillarX = screenX;
+        const platformWidth = platformSprites.leftTop.w * platformScale;
         
-        // 내부 채우기 (왼쪽 외벽과 플랫폼 왼쪽 끝 사이)
-        for (let ix = leftPillarX + pillarW; ix < leftPillarX + platformWidth; ix += pillarW) {
-          if (ix + pillarW <= leftPillarX + platformWidth) {
-            drawAtlas(platformSprites.pillarInner, ix, py);
+        let py = topY + platformSprites.leftTop.h * platformScale;
+        while (py < canvas.height) {
+          // 외벽 (가장 왼쪽)
+          drawAtlas(platformSprites.pillarL, leftPillarX, py);
+          
+          // 내부 채우기 (왼쪽 외벽과 플랫폼 왼쪽 끝 사이)
+          for (let ix = leftPillarX + pillarW; ix < leftPillarX + platformWidth; ix += pillarW) {
+            if (ix + pillarW <= leftPillarX + platformWidth) {
+              drawAtlas(platformSprites.pillarInner, ix, py);
+            }
           }
+          
+          py += pillarH;
         }
+      }
+      
+      // 오른쪽 기둥 렌더링 (y=0까지)
+      if (this.hasRightPillar) {
+        const rightPillarEndX = screenX + (platformSprites.leftTop.w + platformSprites.midTop.w * this.tiles) * platformScale;
+        const rightPillarStartX = rightPillarEndX;
+        const platformWidth = platformSprites.rightTop.w * platformScale;
         
-        py += pillarH;
+        let py = topY + platformSprites.rightTop.h * platformScale;
+        while (py < canvas.height) {
+          // 외벽 (가장 오른쪽)
+          drawAtlas(platformSprites.pillarR, rightPillarStartX, py);
+          
+          // 내부 채우기 (플랫폼 오른쪽 끝과 오른쪽 외벽 사이)
+          for (let ix = rightPillarStartX + pillarW; ix < rightPillarStartX + platformWidth; ix += pillarW) {
+            if (ix + pillarW <= rightPillarStartX + platformWidth) {
+              drawAtlas(platformSprites.pillarInner, ix, py);
+            }
+          }
+          
+          py += pillarH;
+        }
       }
     }
-    
-    // 오른쪽 기둥 렌더링 (y=0까지)
-    if (this.hasRightPillar) {
-      const rightPillarEndX = screenX + (platformSprites.leftTop.w + platformSprites.midTop.w * this.tiles) * platformScale;
-      const rightPillarStartX = rightPillarEndX;
-      const platformWidth = platformSprites.rightTop.w * platformScale;
-      
-      let py = topY + platformSprites.rightTop.h * platformScale;
-      while (py < canvas.height) {
-        // 외벽 (가장 오른쪽)
-        drawAtlas(platformSprites.pillarR, rightPillarStartX, py);
-        
-        // 내부 채우기 (플랫폼 오른쪽 끝과 오른쪽 외벽 사이)
-        for (let ix = rightPillarStartX + pillarW; ix < rightPillarStartX + platformWidth; ix += pillarW) {
-          if (ix + pillarW <= rightPillarStartX + platformWidth) {
-            drawAtlas(platformSprites.pillarInner, ix, py);
-          }
-        }
-        
-        py += pillarH;
-      }
-    }
-  }
 
   tryLanding(charBoxPrev, charBoxNew) {
     if (!(charBoxPrev.bottom <= this.topY && charBoxNew.bottom >= this.topY)) return false;
@@ -160,12 +159,12 @@ class Platform {
   플랫폼 설정 (좁힌 간격)
 ------------------------*/
 const initialPlatformCount = 8;
-const minTiles = 1;
+const minTiles = 0;
 const maxTiles = 6;
-let minGap = 25;
-let maxGap = 80;
-const minYoffset = -120;
-const maxYoffset = 56; // 8의 배수로 맞춤 (64-8=56)
+let minGap = 32;
+let maxGap = 108;
+const minYoffset = -96;
+const maxYoffset = 32;
 const baseGroundY = () => {
   const baseY = canvas.height - (dinoFrames[0].h * scale) - 20;
   return Math.floor(baseY / 8) * 8; // 8픽셀 단위로 맞춤
@@ -308,7 +307,7 @@ function checkGameOverButtonClick(mouseX, mouseY) {
 
 // 키 이벤트
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyR' && gameOver) {
+  if (e.code === 'Space' && gameOver) {
     // 게임 재시작
     restartGame();
     return;
@@ -494,11 +493,32 @@ function render() {
     ctx.drawImage(sprite, frame.x, frame.y, frame.w, frame.h, screenX, screenY, dw, dh);
   }
 
+  
+  // --- 여기에 충전량 표시 추가 ---
+  if (isHolding) {
+    // 0..1 사이의 현재 충전량 계산
+    const heldMs = Math.max(0, performance.now() - holdStartTime);
+    const charge = Math.max(0, Math.min(1, heldMs / maxChargeMs));
+
+    // 바 크기 및 위치 (디자인은 나중에 변경 가능)
+    const barWidth = 24;   // 바 전체 너비 (픽셀)
+    const barHeight = 3;   // 바 높이
+    const barX = screenX + Math.round((dw - barWidth) / 2);
+    const barY = screenY - 4; // 개구리 바로 위
+
+    ctx.save();
+
+    ctx.fillStyle = 'black';
+    ctx.fillRect(barX-3, barY-3, barWidth+6, barHeight+6);
+
+    ctx.fillStyle = 'lime';
+    ctx.fillRect(barX, barY, Math.round(barWidth * charge), barHeight);
+
+    ctx.restore();
+  }
+  // --- 충전량 표시 끝 ---
   // 게임 오버 UI 렌더링
   if (gameOver && gameOverImageLoaded) {
-    // 반투명 오버레이
-    ctx.fillStyle = 'rgba(255,255,255,0)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // 재시작 버튼 (이미지)
     const buttonX = (canvas.width - gameOverButton.screenW) / 2;
@@ -509,12 +529,6 @@ function render() {
       gameOverButton.x, gameOverButton.y, gameOverButton.w, gameOverButton.h,
       buttonX, buttonY, gameOverButton.screenW, gameOverButton.screenH);
     
-    // 클릭 안내 텍스트
-    ctx.fillStyle = 'white';
-    ctx.font = '12px monospace';
-    
-    // 텍스트 정렬 리셋
-    ctx.textAlign = 'left';
   }
 }
 

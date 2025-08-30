@@ -164,7 +164,7 @@ const maxTiles = 6;
 let minGap = 32;
 let maxGap = 108;
 const minYoffset = -96;
-const maxYoffset = 32;
+const maxYoffset = 40;
 const baseGroundY = () => {
   const baseY = canvas.height - (dinoFrames[0].h * scale) - 20;
   return Math.floor(baseY / 8) * 8; // 8픽셀 단위로 맞춤
@@ -563,3 +563,4 @@ sprite.onload = () => {
 </script>
 </body>
 </html>
+

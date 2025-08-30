@@ -532,6 +532,146 @@ function render() {
   }
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ---------- 화면 크기(표시용) 조절 및 포인터 보정 유틸 ----------
+
+// 모바일/작은 화면이면 캔버스의 CSS 크기를 줄입니다.
+// 내부 해상도(canvas.width/height)는 변경하지 않습니다.
+function adjustCanvasDisplaySize() {
+  const maxWidth = 800;      // 내부 논리 width
+  const maxHeight = 360;     // 내부 논리 height
+  const margin = 16;         // 좌우 여유 (CSS 픽셀)
+  const smallMobileLimit = 480; // 터치/모바일에 적용할 최대 너비
+
+  // 기본 display width는 창 너비에 맞추되 내부 최대값을 넘지 않음
+  let displayWidth = Math.min(window.innerWidth - margin, maxWidth);
+
+  // 모바일(터치 기기 또는 userAgent 기반)일 경우 더 작게 제한
+  const isTouch = ('ontouchstart' in window) || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isTouch) {
+    // 예: 모바일에선 최대 smallMobileLimit 또는 화면너비 중 작은 쪽을 사용
+    displayWidth = Math.min(displayWidth, smallMobileLimit);
+  }
+
+  // 종횡비 유지
+  const displayHeight = Math.round(displayWidth * maxHeight / maxWidth);
+
+  // 적용 (CSS 픽셀 크기만 변경)
+  canvas.style.width = displayWidth + 'px';
+  canvas.style.height = displayHeight + 'px';
+
+  // 유지: 내부 캔버스 해상도는 그대로 (game logic uses canvas.width/height)
+  // ctx.imageSmoothingEnabled = false; // 이미 설정되어 있음
+}
+
+// 이벤트/터치 좌표를 "캔버스 내부 좌표"로 변환
+function getCanvasRelativeCoordsFromClient(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  // CSS 픽셀 -> 내부 캔버스 픽셀로 스케일 변환
+  const x = (clientX - rect.left) * (canvas.width / rect.width);
+  const y = (clientY - rect.top) * (canvas.height / rect.height);
+  return { x, y };
+}
+
+// 초기 호출 + 리사이즈에 대응
+adjustCanvasDisplaySize();
+window.addEventListener('resize', adjustCanvasDisplaySize);
+window.addEventListener('orientationchange', () => {
+  // orientationchange 직후 브라우저가 리페인트 하므로 약간 지연해 조정하면 더 정확
+  setTimeout(adjustCanvasDisplaySize, 200);
+});
+
+
+// ---------- 변경된 이벤트 리스너 (기존 mousedown/touchstart 등을 아래로 교체) ----------
+
+// 마우스 다운
+canvas.addEventListener('mousedown', (e) => {
+  const pos = getCanvasRelativeCoordsFromClient(e.clientX, e.clientY);
+  const mouseX = pos.x;
+  const mouseY = pos.y;
+
+  // 게임 오버 상태에서 버튼 클릭 체크 (버튼 좌표는 내부 캔버스 좌표 기준)
+  if (checkGameOverButtonClick(mouseX, mouseY)) {
+    restartGame();
+    return;
+  }
+  
+  if (e.button === 0) beginHold();
+});
+
+// 마우스 업 (문서 전체)
+document.addEventListener('mouseup', (e) => {
+  if (!gameOver) releaseHoldAndJump();
+});
+
+// 터치 시작
+canvas.addEventListener('touchstart', (e) => { 
+  e.preventDefault();
+  const touch = e.touches[0];
+  const pos = getCanvasRelativeCoordsFromClient(touch.clientX, touch.clientY);
+  const touchX = pos.x, touchY = pos.y;
+
+  if (checkGameOverButtonClick(touchX, touchY)) {
+    restartGame();
+    return;
+  }
+
+  beginHold();
+}, {passive:false});
+
+// 터치 종료
+window.addEventListener('touchend', (e) => { 
+  e.preventDefault();
+  if (!gameOver) releaseHoldAndJump();
+}, {passive:false});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* -----------------------
   플랫폼 스폰 헬퍼
 ------------------------*/
@@ -563,5 +703,3 @@ sprite.onload = () => {
 </script>
 </body>
 </html>
-
-

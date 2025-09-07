@@ -11,9 +11,6 @@
 </head>
 <body>
   <canvas id="game" width="800" height="360"></canvas>
-  <div style="display: flex; margin-top: 3rem;">
-    <div id="hud" style="display:block; margin:0 auto;">distance: 0</div>
-  </div>
 
 <script>
   const platformSprites = {
@@ -22,16 +19,14 @@
     rightTop: {x:16, y:8,  w:8, h:8}, // 오른쪽 끝(위)
     pillarL:  {x:16, y:16, w:8, h:8}, // 왼쪽 기둥 외벽
     pillarR:  {x:24, y:8 , w:8, h:8}, // 오른쪽 기둥 외벽
-    pillarInner: {x:24, y:16, w:8, h:8}, // 기둥 내부 채우기용 - 사실 필요없음
   };
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
-  // const hud = document.getElementById('hud');
   ctx.imageSmoothingEnabled = false;
 
   const sprite = new Image();
-  sprite.src = 'assets/FROG.png';
+  sprite.src = 'assets/frog.png';
 
   const dinoFrames = [
     {x:0,y:0,w:8,h:8},   // 0: 기본
@@ -42,55 +37,64 @@
     {x:8,y:0,w:8,h:8},   // 5
   ];
 
-  // 상태 프레임 순서
-  const standingFrameIndex = 0; // 기본 상태
-  const holdingFrameIndex = 1;  // 충전 상태
-  const jumpAnimStart = 2;
-  const jumpAnimEnd = 5;
-  let landingFrameIndex = 6; //?
-if (!dinoFrames[landingFrameIndex]) landingFrameIndex = jumpAnimEnd;
+  // === 사용자 제공 숫자 프레임 (각 6x6) ===
+  const digitFrames = {
+    '1': {x: 0, y:24, w:6, h:6},
+    '2': {x: 6, y:24, w:6, h:6},
+    '3': {x:12, y:24, w:6, h:6},
+    '4': {x:18, y:24, w:6, h:6},
+    '5': {x:24, y:24, w:6, h:6},
+    '6': {x:30, y:24, w:6, h:6},
+    '7': {x:36, y:24, w:6, h:6},
+    '8': {x:32, y: 0, w:6, h:6},
+    '9': {x:32, y: 6, w:6, h:6},
+    '0': {x:32, y:12, w:6, h:6}
+  };
+  const DIGIT_W = 6, DIGIT_H = 6;
 
+  // (옵션) 개별 글자 프레임 (필요시 숫자 대체 등)
+  const glyphFrames = {
+    'd': {x:40, y: 0, w:8, h:8},
+    'i': {x:40, y: 8, w:8, h:8},
+    's': {x:32, y: 8, w:8, h:8},
+    't': {x:32, y: 0, w:8, h:8},
+    'a': {x:40, y:32, w:8, h:8},
+    'n': {x:40, y:16, w:8, h:8},
+    'c': {x:40, y:24, w:8, h:8},
+    'e': {x:32, y:16, w:8, h:8},
+    'b': {x:32, y:24, w:8, h:8}
+  };
+
+  // === labelFrames: distance / best 한 덩이 프레임 ===
+  // 사용자 제공 좌표: distance(x:0,y:30,w:35,h:6), best(x:24,y:18,w:35,h:6)
+  const labelFrames = {
+    distance: {x:0, y:30, w:35, h:6},
+    best:     {x:24, y:18, w:35, h:6}
+  };
+
+  // --- game state & constants ---
   const scale = 3;
   const platformScale = scale;
-
-  let posX = 0;
-  let posY = 0;
-  let velX = 0;
-  let velY = 0;
-  let isJumping = false;
-  let isHolding = false;
-  let holdStartTime = 0;
-
+  let posX = 0, posY = 0, velX = 0, velY = 0;
+  let isJumping = false, isHolding = false, holdStartTime = 0;
   const gravity = 0.7;
-  const minSpeed = 9.0;
-  const maxSpeed = 17.0;
+  const minSpeed = 9.0, maxSpeed = 17.0;
   const maxChargeMs = 1000;
-
-  const minAngleDeg = 3; // 원래는 5
-  const maxAngleDeg = 85;
-
-  let currentFrameIndex = standingFrameIndex;
-  let frameTick = 0;
-  let jumpFrameSpeed = 8;
-  let isLandingShown = false;
-  let landingShownAt = 0;
-  const landingHoldMs = 160;
+  const minAngleDeg = 0, maxAngleDeg = 85;
+  const standingFrameIndex = 0, holdingFrameIndex = 1;
+  const jumpAnimStart = 2, jumpAnimEnd = 5;
+  let currentFrameIndex = standingFrameIndex, frameTick = 0, jumpFrameSpeed = 8;
+  let isLandingShown = false, landingShownAt = 0, landingHoldMs = 160;
 
   class Platform {
     constructor(x, topY, tiles) {
-      this.x = x;
-      this.topY = topY;
-      this.tiles = Math.max(1, tiles);
+      this.x = x; this.topY = topY; this.tiles = Math.max(1, tiles);
       this.width = (platformSprites.leftTop.w + platformSprites.midTop.w * this.tiles + platformSprites.rightTop.w) * platformScale;
-      this.hasLeftPillar = 1;
-      this.hasRightPillar = 1;
+      this.hasLeftPillar = 1; this.hasRightPillar = 1;
     }
-
     render(cameraX) {
       const screenX = Math.round(this.x - cameraX);
       const topY = Math.round(this.topY);
-      
-      // 플랫폼 상단 렌더링
       drawAtlas(platformSprites.leftTop, screenX, topY);
       let midX = screenX + platformSprites.leftTop.w * platformScale;
       for (let i = 0; i < this.tiles; i++) {
@@ -101,604 +105,446 @@ if (!dinoFrames[landingFrameIndex]) landingFrameIndex = jumpAnimEnd;
 
       const pillarW = platformSprites.pillarL.w * platformScale;
       const pillarH = platformSprites.pillarL.h * platformScale;
-      
-      // 왼쪽 기둥 렌더링 (y=0까지)
       if (this.hasLeftPillar) {
         const leftPillarX = screenX;
-        const platformWidth = platformSprites.leftTop.w * platformScale;
-        
         let py = topY + platformSprites.leftTop.h * platformScale;
         while (py < canvas.height) {
-          // 외벽 (가장 왼쪽)
           drawAtlas(platformSprites.pillarL, leftPillarX, py);
-          
-          // 내부 채우기 (왼쪽 외벽과 플랫폼 왼쪽 끝 사이)
-          for (let ix = leftPillarX + pillarW; ix < leftPillarX + platformWidth; ix += pillarW) {
-            if (ix + pillarW <= leftPillarX + platformWidth) {
-              drawAtlas(platformSprites.pillarInner, ix, py);
-            }
-          }
-          
           py += pillarH;
         }
       }
-      
-      // 오른쪽 기둥 렌더링 (y=0까지)
       if (this.hasRightPillar) {
-        const rightPillarEndX = screenX + (platformSprites.leftTop.w + platformSprites.midTop.w * this.tiles) * platformScale;
-        const rightPillarStartX = rightPillarEndX;
-        const platformWidth = platformSprites.rightTop.w * platformScale;
-        
+        const rightPillarStartX = screenX + (platformSprites.leftTop.w + platformSprites.midTop.w * this.tiles) * platformScale;
         let py = topY + platformSprites.rightTop.h * platformScale;
         while (py < canvas.height) {
-          // 외벽 (가장 오른쪽)
           drawAtlas(platformSprites.pillarR, rightPillarStartX, py);
-          
-          // 내부 채우기 (플랫폼 오른쪽 끝과 오른쪽 외벽 사이)
-          for (let ix = rightPillarStartX + pillarW; ix < rightPillarStartX + platformWidth; ix += pillarW) {
-            if (ix + pillarW <= rightPillarStartX + platformWidth) {
-              drawAtlas(platformSprites.pillarInner, ix, py);
-            }
-          }
-          
           py += pillarH;
         }
       }
     }
 
-  tryLanding(charBoxPrev, charBoxNew) {
-    if (!(charBoxPrev.bottom <= this.topY && charBoxNew.bottom >= this.topY)) return false;
-    const platLeft = this.x;
-    const platRight = this.x + this.width;
-    if (charBoxNew.right <= platLeft || charBoxNew.left >= platRight) return false;
-    return true;
-  }
-}
-
-/* -----------------------
-  플랫폼 설정 (좁힌 간격)
-------------------------*/
-const initialPlatformCount = 8;
-const minTiles = 0;
-const maxTiles = 6;
-let minGap = 32;
-let maxGap = 108;
-const minYoffset = -96;
-const maxYoffset = 24;
-const baseGroundY = () => {
-  const baseY = canvas.height - (dinoFrames[0].h * scale) - 20;
-  return Math.floor(baseY / 8) * 8; // 8픽셀 단위로 맞춤
-};
-
-let platforms = [];
-let cameraX = 0;
-const cameraFollowX = 200;
-let distance = 0;
-let bestDistance = 0;
-let gameOver = false;
-let gameOverImageLoaded = false;
-
-// 게임 오버 이미지 로딩
-const gameOverImage = new Image();
-gameOverImage.src = 'assets/FROG.png'; // 같은 스프라이트 시트 사용
-gameOverImage.onload = () => {
-  gameOverImageLoaded = true;
-};
-
-// 게임 오버 버튼 스프라이트 정의 (예시로 기본 프레임 사용, 필요시 다른 좌표로 변경)
-const gameOverButton = {
-  x:8, y:16, w: 8, h: 8, // 기본 개구리 이미지를 버튼으로 사용
-  screenW: 32, screenH: 32 // 화면에서의 크기
-};
-
-/* -----------------------
-  유틸: 아틀라스에서 조각 그리기
-------------------------*/
-function drawAtlas(spriteInfo, screenX, screenY) {
-  const dw = spriteInfo.w * platformScale;
-  const dh = spriteInfo.h * platformScale;
-  ctx.drawImage(sprite, spriteInfo.x, spriteInfo.y, spriteInfo.w, spriteInfo.h, screenX, screenY, dw, dh);
-}
-
-function getCharBox(x,y) {
-  const w = dinoFrames[0].w * scale;
-  const h = dinoFrames[0].h * scale;
-  return { left: x, top: y, right: x + w, bottom: y + h, width: w, height: h };
-}
-
-function randomRange(a,b) { return a + Math.random()*(b-a); }
-function randInt(a,b) { return Math.floor(randomRange(a,b+1)); }
-
-function createInitialPlatforms() {
-  platforms = [];
-  let x = 0;
-  const groundTiles = 10;
-  const groundYpos = baseGroundY();
-  const startPlatform = new Platform(x, groundYpos, groundTiles);
-  platforms.push(startPlatform);
-  x = startPlatform.x + startPlatform.width + 60;
-
-  for (let i=0;i<initialPlatformCount;i++) {
-    const gap = randInt(minGap, maxGap);
-    const tiles = randInt(minTiles, maxTiles);
-    const yOffset = Math.round(randomRange(minYoffset, maxYoffset) / 8) * 8; // 8픽셀 단위로 맞춤
-    const topY = baseGroundY() + yOffset;
-    const p = new Platform(x + gap, topY, tiles);
-    platforms.push(p);
-    x = p.x + p.width;
-  }
-
-  // 캐릭터 위치: 시작 플랫폼 위로 확실히 올려놓음
-  posX = startPlatform.x + Math.min(40, startPlatform.width/3);
-  posY = startPlatform.topY - (dinoFrames[0].h * scale);
-
-  // *** 핵심: 상태 초기화 (초기화 버그 방지) ***
-  isHolding = false;
-  holdStartTime = 0;
-  isJumping = false;
-  isLandingShown = false;
-  currentFrameIndex = standingFrameIndex;
-  frameTick = 0;
-  velX = 0;
-  velY = 0;
-  gameOver = false; // 게임 오버 상태 초기화
-}
-
-/* -----------------------
-  입력/충전/점프 로직 (참고 코드 기반으로 수정)
-------------------------*/
-function beginHold() {
-  if (gameOver) return; // 게임 오버 시 입력 무시
-  if (isJumping || isLandingShown) return;
-  if (!isHolding) {
-    isHolding = true;
-    holdStartTime = performance.now();
-  }
-}
-
-function releaseHoldAndJump() {
-  if (gameOver) return; // 게임 오버 시 입력 무시
-  if (!isHolding) return;
-  isHolding = false;
-  const heldMs = performance.now() - holdStartTime;
-  const charge = Math.max(0, Math.min(1, heldMs / maxChargeMs));
-  startJump(charge);
-}
-
-function startJump(charge) {
-  if (gameOver) return; // 게임 오버 시 점프 무시
-  if (isJumping) return;
-  isJumping = true;
-  isLandingShown = false;
-
-  const angleDeg = minAngleDeg + charge * (maxAngleDeg - minAngleDeg);
-  const angleRad = angleDeg * Math.PI / 180;
-  const speed = minSpeed + charge * (maxSpeed - minSpeed);
-  
-  velX = Math.cos(angleRad) * speed;
-  velY = -Math.sin(angleRad) * speed;
-
-  jumpFrameSpeed = Math.round(4 + 16 * charge);
-  if (jumpFrameSpeed < 1) jumpFrameSpeed = 1;
-
-  currentFrameIndex = jumpAnimStart;
-  frameTick = 0;
-}
-
-// 이벤트 바인딩 (참고 코드와 동일)
-// 게임 재시작 함수
-function restartGame() {
-  distance = 0;
-  cameraX = 0;
-  gameOver = false;
-  createInitialPlatforms();
-}
-
-// 게임 오버 버튼 클릭 체크
-function checkGameOverButtonClick(mouseX, mouseY) {
-  if (!gameOver) return false;
-  
-  const buttonX = (canvas.width - gameOverButton.screenW) / 2;
-  const buttonY = (canvas.height - gameOverButton.screenH) / 2;
-  
-  return mouseX >= buttonX && mouseX <= buttonX + gameOverButton.screenW &&
-         mouseY >= buttonY && mouseY <= buttonY + gameOverButton.screenH;
-}
-
-// 키 이벤트
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && gameOver) {
-    // 게임 재시작
-    restartGame();
-    return;
-  }
-  if (e.code === 'Space' || e.key === ' ') {
-    e.preventDefault();
-    beginHold();
-  }
-});
-window.addEventListener('keyup', (e) => {
-  if (e.code === 'Space' || e.key === ' ') {
-    e.preventDefault();
-    releaseHoldAndJump();
-  }
-});
-
-canvas.addEventListener('mousedown', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
-  
-  // 게임 오버 상태에서 버튼 클릭 체크
-  if (checkGameOverButtonClick(mouseX, mouseY)) {
-    restartGame();
-    return;
-  }
-  
-  // 일반 게임플레이 입력
-  if (e.button === 0) beginHold();
-});
-document.addEventListener('mouseup', (e) => {
-  if (!gameOver) releaseHoldAndJump();
-});
-
-canvas.addEventListener('touchstart', (e) => { 
-  e.preventDefault(); 
-  const rect = canvas.getBoundingClientRect();
-  const touch = e.touches[0];
-  const touchX = touch.clientX - rect.left;
-  const touchY = touch.clientY - rect.top;
-  
-  // 게임 오버 상태에서 버튼 터치 체크
-  if (checkGameOverButtonClick(touchX, touchY)) {
-    restartGame();
-    return;
-  }
-  
-  // 일반 게임플레이 입력
-  beginHold(); 
-}, {passive:false});
-window.addEventListener('touchend', (e) => { 
-  e.preventDefault(); 
-  if (!gameOver) releaseHoldAndJump(); 
-}, {passive:false});
-
-/* -----------------------
-  물리 업데이트 (참고 코드 기반으로 수정)
-------------------------*/
-function updatePhysics() {
-  if (gameOver) return; // 게임 오버 시 물리 업데이트 중지
-  
-  if (isJumping) {
-    // 중력 적용
-    velY += gravity;
-    posY += velY;
-    posX += velX;
-
-    // 바닥에 닿으면 게임 오버
-    if (posY >= canvas.height - (dinoFrames[0].h * scale)) {
-      gameOver = true;
-      isJumping = false;
-      velX = 0;
-      velY = 0;
-      return;
-    }
-
-    // 충돌 감지 (하강 중일 때만)
-    if (velY >= 0) {
-      const prevBox = getCharBox(posX - velX, posY - velY);
-      const newBox = getCharBox(posX, posY);
-
-      for (let i = 0; i < platforms.length; i++) {
-        const p = platforms[i];
-        if (p.tryLanding(prevBox, newBox)) {
-          posY = p.topY - newBox.height;
-          velY = 0;
-          isJumping = false;
-
-          // 착지 프레임 표시
-          currentFrameIndex = landingFrameIndex;
-          isLandingShown = true;
-          landingShownAt = performance.now();
-          velX = 0;
-          break;
-        }
-      }
-    }
-  } else {
-    // 지면에 있을 때는 플랫폼 위치 유지
-    const charCenterX = posX + getCharBox(posX, posY).width / 2;
-    let standPlat = null;
-    for (let p of platforms) {
-      if (charCenterX >= p.x && charCenterX <= p.x + p.width) {
-        standPlat = p;
-        break;
-      }
-    }
-    if (standPlat) {
-      posY = standPlat.topY - getCharBox(posX, posY).height;
+    tryLanding(charBoxPrev, charBoxNew) {
+      if (!(charBoxPrev.bottom <= this.topY && charBoxNew.bottom >= this.topY)) return false;
+      const platLeft = this.x, platRight = this.x + this.width;
+      if (charBoxNew.right <= platLeft || charBoxNew.left >= platRight) return false;
+      return true;
     }
   }
 
-  // 카메라 업데이트
-  if (posX - cameraX > cameraFollowX) cameraX = posX - cameraFollowX;
-  if (cameraX < 0) cameraX = 0;
-
-  // 플랫폼 관리
-  while (platforms.length && platforms[0].x + platforms[0].width < cameraX - 200) platforms.shift();
-
-  let lastPlatRight = 0;
-  if (platforms.length) {
-    const last = platforms[platforms.length - 1];
-    lastPlatRight = last.x + last.width;
-  }
-  while (lastPlatRight < cameraX + canvas.width * 2) {
-    const newP = spawnPlatformAfter(lastPlatRight);
-    lastPlatRight = newP.x + newP.width;
+  // utility
+  function drawAtlas(spriteInfo, screenX, screenY) {
+    const dw = spriteInfo.w * platformScale;
+    const dh = spriteInfo.h * platformScale;
+    ctx.drawImage(sprite, spriteInfo.x, spriteInfo.y, spriteInfo.w, spriteInfo.h, screenX, screenY, dw, dh);
   }
 
-  distance = Math.max(distance, Math.floor(posX));
-  if (distance > bestDistance) bestDistance = distance;
-  
-  const status = gameOver ? " [GAME OVER - Press R to restart]" : "";
-  hud.innerText = `distance: ${distance}  best: ${bestDistance}${status}`;
-}
-
-/* -----------------------
-  애니메이션/렌더 (참고 코드 기반으로 수정)
-------------------------*/
-function updateAnimation() {
-  if (isHolding && !isJumping && !isLandingShown) {
-    currentFrameIndex = holdingFrameIndex;
-  } else if (isJumping) {
-    frameTick++;
-    if (frameTick >= jumpFrameSpeed) {
-      frameTick = 0;
-      currentFrameIndex++;
-      if (currentFrameIndex > jumpAnimEnd) {
-        currentFrameIndex = jumpAnimEnd;
-      }
+  // draw a single char (digitFrames 우선, 없으면 glyphFrames)
+  function drawSpriteChar(ch, x, y, outScale = scale) {
+    if (digitFrames[ch]) {
+      const f = digitFrames[ch];
+      ctx.drawImage(sprite, f.x, f.y, f.w, f.h, x, y, f.w * outScale, f.h * outScale);
+      return true;
+    } else if (glyphFrames[ch]) {
+      const f = glyphFrames[ch];
+      ctx.drawImage(sprite, f.x, f.y, f.w, f.h, x, y, f.w * outScale, f.h * outScale);
+      return true;
     }
-  } else if (isLandingShown) {
-    const now = performance.now();
-    if (now - landingShownAt >= landingHoldMs) {
-      isLandingShown = false;
-      currentFrameIndex = standingFrameIndex;
-    } else {
-      currentFrameIndex = landingFrameIndex;
+    return false;
+  }
+
+  function drawSpriteText(str, x, y, spacing = 1, outScale = scale) {
+    let cursor = x;
+    for (let ch of str) {
+      const drawn = drawSpriteChar(ch, cursor, y, outScale);
+      const adv = (digitFrames[ch] ? digitFrames[ch].w : (glyphFrames[ch] ? glyphFrames[ch].w : 6));
+      cursor += Math.round(adv * outScale) + spacing;
     }
-  } else {
-    currentFrameIndex = standingFrameIndex;
-  }
-}
-
-function render() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  for (const p of platforms) p.render(cameraX);
-
-  const screenX = Math.round(posX - cameraX);
-  const screenY = Math.round(posY);
-  const frame = dinoFrames[currentFrameIndex];
-  const dw = frame.w * scale;
-  const dh = frame.h * scale;
-  const flip = (velX < 0) ? false : true;
-  
-  if (flip) {
-    ctx.save();
-    ctx.scale(-1, 1);
-    ctx.drawImage(sprite, frame.x, frame.y, frame.w, frame.h, -(screenX + dw), screenY, dw, dh);
-    ctx.restore();
-  } else {
-    ctx.drawImage(sprite, frame.x, frame.y, frame.w, frame.h, screenX, screenY, dw, dh);
+    return cursor;
   }
 
-  
-  // --- 여기에 충전량 표시 추가 ---
-  if (isHolding) {
-    // 0..1 사이의 현재 충전량 계산
-    const heldMs = Math.max(0, performance.now() - holdStartTime);
+  function getCharBox(x,y) {
+    const w = dinoFrames[0].w * scale;
+    const h = dinoFrames[0].h * scale;
+    return { left: x, top: y, right: x + w, bottom: y + h, width: w, height: h };
+  }
+
+  // game variables & platform generation
+  const initialPlatformCount = 8;
+  const minTiles = 0, maxTiles = 6;
+  let minGap = 32, maxGap = 108; //minGap = 32, maxGap = 108;
+  const minYoffset = -96, maxYoffset = 24; //minYoffset = -96, maxYoffset = 24;
+  const baseGroundY = () => {
+    const baseY = canvas.height - (dinoFrames[0].h * scale) - 20;
+    return Math.floor(baseY / 8) * 8;
+  };
+
+  let platforms = [], cameraX = 0, cameraFollowX = 200;
+  let distance = 0, bestDistance = 0, gameOver = false, gameOverImageLoaded = false;
+
+  const gameOverImage = new Image();
+  gameOverImage.src = 'assets/frog.png';
+  gameOverImage.onload = () => { gameOverImageLoaded = true; };
+
+  const gameOverButton = { x:8, y:16, w: 8, h: 8, screenW: 32, screenH: 32 };
+
+  function randomRange(a,b) { return a + Math.random()*(b-a); }
+  function randInt(a,b) { return Math.floor(randomRange(a,b+1)); }
+
+  function createInitialPlatforms() {
+    platforms = [];
+    let x = 0;
+    const groundTiles = 10;
+    const groundYpos = baseGroundY();
+    const startPlatform = new Platform(x, groundYpos, groundTiles);
+    platforms.push(startPlatform);
+    x = startPlatform.x + startPlatform.width + 60;
+
+    for (let i=0;i<initialPlatformCount;i++) {
+      const gap = randInt(minGap, maxGap);
+      const tiles = randInt(minTiles, maxTiles);
+      const yOffset = Math.round(randomRange(minYoffset, maxYoffset) / 8) * 8;
+      const topY = baseGroundY() + yOffset;
+      const p = new Platform(x + gap, topY, tiles);
+      platforms.push(p);
+      x = p.x + p.width;
+    }
+
+    posX = startPlatform.x + Math.min(40, startPlatform.width/3);
+    posY = startPlatform.topY - (dinoFrames[0].h * scale);
+
+    isHolding = false; holdStartTime = 0; isJumping = false; isLandingShown = false;
+    currentFrameIndex = standingFrameIndex; frameTick = 0; velX = 0; velY = 0; gameOver = false;
+  }
+
+  function beginHold() {
+    if (gameOver) return;
+    if (isJumping || isLandingShown) return;
+    if (!isHolding) { isHolding = true; holdStartTime = performance.now(); }
+  }
+
+  function releaseHoldAndJump() {
+    if (gameOver) return;
+    if (!isHolding) return;
+    isHolding = false;
+    const heldMs = performance.now() - holdStartTime;
     const charge = Math.max(0, Math.min(1, heldMs / maxChargeMs));
-
-    // 바 크기 및 위치 (디자인은 나중에 변경 가능)
-    const barWidth = 24;   // 바 전체 너비 (픽셀)
-    const barHeight = 3;   // 바 높이
-    const barX = screenX + Math.round((dw - barWidth) / 2);
-    const barY = screenY - 4; // 개구리 바로 위
-
-    ctx.save();
-
-    ctx.fillStyle = 'black';
-    ctx.fillRect(barX-3, barY-3, barWidth+6, barHeight+6);
-
-    ctx.fillStyle = 'lime';
-    ctx.fillRect(barX, barY, Math.round(barWidth * charge), barHeight);
-
-    ctx.restore();
+    startJump(charge);
   }
-  // --- 충전량 표시 끝 ---
-  // 게임 오버 UI 렌더링
-  if (gameOver && gameOverImageLoaded) {
 
-    // 재시작 버튼 (이미지)
+  function startJump(charge) {
+    if (gameOver) return;
+    if (isJumping) return;
+    isJumping = true; isLandingShown = false;
+    const angleDeg = minAngleDeg + charge * (maxAngleDeg - minAngleDeg);
+    const angleRad = angleDeg * Math.PI / 180;
+    const speed = minSpeed + charge * (maxSpeed - minSpeed);
+    velX = Math.cos(angleRad) * speed;
+    velY = -Math.sin(angleRad) * speed;
+    jumpFrameSpeed = Math.round(4 + 16 * charge);
+    if (jumpFrameSpeed < 1) jumpFrameSpeed = 1;
+    currentFrameIndex = jumpAnimStart; frameTick = 0;
+  }
+
+  function restartGame() {
+    distance = 0; cameraX = 0; gameOver = false; createInitialPlatforms();
+  }
+
+  function checkGameOverButtonClick(mouseX, mouseY) {
+    if (!gameOver) return false;
     const buttonX = (canvas.width - gameOverButton.screenW) / 2;
     const buttonY = (canvas.height - gameOverButton.screenH) / 2;
-    
-    // 버튼 이미지 (개구리)
-    ctx.drawImage(gameOverImage, 
-      gameOverButton.x, gameOverButton.y, gameOverButton.w, gameOverButton.h,
-      buttonX, buttonY, gameOverButton.screenW, gameOverButton.screenH);
-    
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ---------- 화면 크기(표시용) 조절 및 포인터 보정 유틸 ----------
-
-// 모바일/작은 화면이면 캔버스의 CSS 크기를 줄입니다.
-// 내부 해상도(canvas.width/height)는 변경하지 않습니다.
-function adjustCanvasDisplaySize() {
-  const maxWidth = 800;      // 내부 논리 width
-  const maxHeight = 360;     // 내부 논리 height
-  const margin = 16;         // 좌우 여유 (CSS 픽셀)
-  const smallMobileLimit = 480; // 터치/모바일에 적용할 최대 너비
-
-  // 기본 display width는 창 너비에 맞추되 내부 최대값을 넘지 않음
-  let displayWidth = Math.min(window.innerWidth - margin, maxWidth);
-
-  // 모바일(터치 기기 또는 userAgent 기반)일 경우 더 작게 제한
-  const isTouch = ('ontouchstart' in window) || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if (isTouch) {
-    // 예: 모바일에선 최대 smallMobileLimit 또는 화면너비 중 작은 쪽을 사용
-    displayWidth = Math.min(displayWidth, smallMobileLimit);
+    return mouseX >= buttonX && mouseX <= buttonX + gameOverButton.screenW &&
+           mouseY >= buttonY && mouseY <= buttonY + gameOverButton.screenH;
   }
 
-  // 종횡비 유지
-  const displayHeight = Math.round(displayWidth * maxHeight / maxWidth);
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && gameOver) { restartGame(); return; }
+    if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); beginHold(); }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); releaseHoldAndJump(); }
+  });
 
-  // 적용 (CSS 픽셀 크기만 변경)
-  canvas.style.width = displayWidth + 'px';
-  canvas.style.height = displayHeight + 'px';
+  canvas.addEventListener('mousedown', (e) => {
+    const pos = getCanvasRelativeCoordsFromClient(e.clientX, e.clientY);
+    const mouseX = pos.x, mouseY = pos.y;
+    if (checkGameOverButtonClick(mouseX, mouseY)) { restartGame(); return; }
+    if (e.button === 0) beginHold();
+  });
+  document.addEventListener('mouseup', (e) => { if (!gameOver) releaseHoldAndJump(); });
 
-  // 유지: 내부 캔버스 해상도는 그대로 (game logic uses canvas.width/height)
-  // ctx.imageSmoothingEnabled = false; // 이미 설정되어 있음
-}
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const pos = getCanvasRelativeCoordsFromClient(touch.clientX, touch.clientY);
+    if (checkGameOverButtonClick(pos.x, pos.y)) { restartGame(); return; }
+    beginHold();
+  }, {passive:false});
+  window.addEventListener('touchend', (e) => { e.preventDefault(); if (!gameOver) releaseHoldAndJump(); }, {passive:false});
 
-// 이벤트/터치 좌표를 "캔버스 내부 좌표"로 변환
-function getCanvasRelativeCoordsFromClient(clientX, clientY) {
-  const rect = canvas.getBoundingClientRect();
-  // CSS 픽셀 -> 내부 캔버스 픽셀로 스케일 변환
-  const x = (clientX - rect.left) * (canvas.width / rect.width);
-  const y = (clientY - rect.top) * (canvas.height / rect.height);
-  return { x, y };
-}
+  function updatePhysics() {
+    if (gameOver) return;
+    if (isJumping) {
+      velY += gravity;
+      posY += velY;
+      posX += velX;
 
-// 초기 호출 + 리사이즈에 대응
-adjustCanvasDisplaySize();
-window.addEventListener('resize', adjustCanvasDisplaySize);
-window.addEventListener('orientationchange', () => {
-  // orientationchange 직후 브라우저가 리페인트 하므로 약간 지연해 조정하면 더 정확
-  setTimeout(adjustCanvasDisplaySize, 200);
-});
+      if (posY >= canvas.height - (dinoFrames[0].h * scale)) {
+        gameOver = true; isJumping = false; velX = 0; velY = 0; return;
+      }
 
+      if (velY >= 0) {
+        const prevBox = getCharBox(posX - velX, posY - velY);
+        const newBox = getCharBox(posX, posY);
+        for (let i = 0; i < platforms.length; i++) {
+          const p = platforms[i];
+          if (p.tryLanding(prevBox, newBox)) {
+            posY = p.topY - newBox.height;
+            velY = 0; isJumping = false;
+            currentFrameIndex = jumpAnimEnd;
+            isLandingShown = true; landingShownAt = performance.now();
+            velX = 0;
+            break;
+          }
+        }
+      }
+    } else {
+      const charCenterX = posX + getCharBox(posX, posY).width / 2;
+      let standPlat = null;
+      for (let p of platforms) {
+        if (charCenterX >= p.x && charCenterX <= p.x + p.width) { standPlat = p; break; }
+      }
+      if (standPlat) posY = standPlat.topY - getCharBox(posX, posY).height;
+    }
 
-// ---------- 변경된 이벤트 리스너 (기존 mousedown/touchstart 등을 아래로 교체) ----------
+    if (posX - cameraX > cameraFollowX) cameraX = posX - cameraFollowX;
+    if (cameraX < 0) cameraX = 0;
 
-// 마우스 다운
-canvas.addEventListener('mousedown', (e) => {
-  const pos = getCanvasRelativeCoordsFromClient(e.clientX, e.clientY);
-  const mouseX = pos.x;
-  const mouseY = pos.y;
+    while (platforms.length && platforms[0].x + platforms[0].width < cameraX - 200) platforms.shift();
 
-  // 게임 오버 상태에서 버튼 클릭 체크 (버튼 좌표는 내부 캔버스 좌표 기준)
-  if (checkGameOverButtonClick(mouseX, mouseY)) {
-    restartGame();
-    return;
+    let lastPlatRight = 0;
+    if (platforms.length) { const last = platforms[platforms.length - 1]; lastPlatRight = last.x + last.width; }
+    while (lastPlatRight < cameraX + canvas.width * 2) { const newP = spawnPlatformAfter(lastPlatRight); lastPlatRight = newP.x + newP.width; }
+
+    distance = Math.max(distance, Math.floor(posX));
+    if (distance > bestDistance) bestDistance = distance;
   }
-  
-  if (e.button === 0) beginHold();
-});
 
-// 마우스 업 (문서 전체)
-document.addEventListener('mouseup', (e) => {
-  if (!gameOver) releaseHoldAndJump();
-});
-
-// 터치 시작
-canvas.addEventListener('touchstart', (e) => { 
-  e.preventDefault();
-  const touch = e.touches[0];
-  const pos = getCanvasRelativeCoordsFromClient(touch.clientX, touch.clientY);
-  const touchX = pos.x, touchY = pos.y;
-
-  if (checkGameOverButtonClick(touchX, touchY)) {
-    restartGame();
-    return;
+  function updateAnimation() {
+    if (isHolding && !isJumping && !isLandingShown) {
+      currentFrameIndex = holdingFrameIndex;
+    } else if (isJumping) {
+      frameTick++;
+      if (frameTick >= jumpFrameSpeed) {
+        frameTick = 0;
+        currentFrameIndex++;
+        if (currentFrameIndex > jumpAnimEnd) currentFrameIndex = jumpAnimEnd;
+      }
+    } else if (isLandingShown) {
+      const now = performance.now();
+      if (now - landingShownAt >= landingHoldMs) { isLandingShown = false; currentFrameIndex = standingFrameIndex; }
+      else currentFrameIndex = jumpAnimEnd;
+    } else {
+      currentFrameIndex = standingFrameIndex;
+    }
   }
 
-  beginHold();
-}, {passive:false});
+//--------------------------------------------------------------------------------------------------------------------
+// === HUD: best (top-left) and distance (directly below best) ===
+function drawHUD() {
+  const padding = 8;
+  const topY = padding;
 
-// 터치 종료
-window.addEventListener('touchend', (e) => { 
-  e.preventDefault();
-  if (!gameOver) releaseHoldAndJump();
-}, {passive:false});
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
 
+  // 설정: 라벨-숫자 간격/숫자 간격/라인 간격
+  const LABEL_NUM_GAP = 16;   // 라벨과 숫자 사이 가로 간격 (0 = 붙임)
+  const INTER_DIGIT_GAP = 0; // 숫자들 사이 간격
+  const V_GAP = 6;           // best 라인과 distance 라인 사이의 수직 간격 (픽셀)
 
+  // --- best (왼쪽 상단) ---
+  const bestLabelFrame = labelFrames.best;
+  const bestLabelW = bestLabelFrame.w * scale;
+  const bestLabelH = bestLabelFrame.h * scale;
+  const bestX = padding;
+  const bestY = topY;
 
+  // draw best label
+  ctx.drawImage(
+    sprite,
+    bestLabelFrame.x, bestLabelFrame.y, bestLabelFrame.w, bestLabelFrame.h,
+    bestX, bestY,
+    bestLabelW, bestLabelH
+  );
 
+  // draw best number(s) immediately after label (no gap)
+  const bestStr = String(bestDistance);
+  let bx = bestX + bestLabelW + LABEL_NUM_GAP;
+  for (let i = 0; i < bestStr.length; i++) {
+    const ch = bestStr[i];
+    const f = digitFrames[ch];
+    if (f) {
+      // 숫자 아래 정렬(라벨 바닥에 맞춤)
+      ctx.drawImage(
+        sprite,
+        f.x, f.y, f.w, f.h,
+        bx, bestY + (bestLabelH - f.h * scale),
+        f.w * scale, f.h * scale
+      );
+      bx += Math.round(f.w * scale) + INTER_DIGIT_GAP;
+    } else if (glyphFrames[ch]) {
+      const g = glyphFrames[ch];
+      ctx.drawImage(sprite, g.x, g.y, g.w, g.h, bx, bestY, g.w * scale, g.h * scale);
+      bx += Math.round(g.w * scale) + INTER_DIGIT_GAP;
+    } else {
+      ctx.fillStyle = 'white';
+      ctx.font = `${8 * scale}px monospace`;
+      ctx.fillText(ch, bx, bestY);
+      bx += 6 * scale + INTER_DIGIT_GAP;
+    }
+  }
 
+  // --- distance (left, 바로 아래에 배치) ---
+  const distLabelFrame = labelFrames.distance;
+  const distLabelW = distLabelFrame.w * scale;
+  const distLabelH = distLabelFrame.h * scale;
+  const distX = padding;
+  const distY = bestY + bestLabelH + V_GAP; // 바로 아래 위치
 
+  // draw distance label
+  ctx.drawImage(
+    sprite,
+    distLabelFrame.x, distLabelFrame.y, distLabelFrame.w, distLabelFrame.h,
+    distX, distY,
+    distLabelW, distLabelH
+  );
 
+  // draw distance number(s) immediately after label (no gap)
+  const distStr = String(distance);
+  let dx = distX + distLabelW + LABEL_NUM_GAP;
+  for (let i = 0; i < distStr.length; i++) {
+    const ch = distStr[i];
+    const f = digitFrames[ch];
+    if (f) {
+      ctx.drawImage(
+        sprite,
+        f.x, f.y, f.w, f.h,
+        dx, distY + (distLabelH - f.h * scale),
+        f.w * scale, f.h * scale
+      );
+      dx += Math.round(f.w * scale) + INTER_DIGIT_GAP;
+    } else if (glyphFrames[ch]) {
+      const g = glyphFrames[ch];
+      ctx.drawImage(sprite, g.x, g.y, g.w, g.h, dx, distY, g.w * scale, g.h * scale);
+      dx += Math.round(g.w * scale) + INTER_DIGIT_GAP;
+    } else {
+      ctx.fillStyle = 'white';
+      ctx.font = `${8 * scale}px monospace`;
+      ctx.fillText(ch, dx, distY);
+      dx += 6 * scale + INTER_DIGIT_GAP;
+    }
+  }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* -----------------------
-  플랫폼 스폰 헬퍼
-------------------------*/
-function spawnPlatformAfter(lastX) {
-  const gap = randInt(minGap, maxGap);
-  const tiles = randInt(minTiles, maxTiles);
-  const yOffset = Math.round(randomRange(minYoffset, maxYoffset) / 8) * 8; // 8픽셀 단위로 맞춤
-  const topY = baseGroundY() + yOffset;
-  const p = new Platform(lastX + gap, topY, tiles);
-  platforms.push(p);
-  return p;
+  ctx.restore();
 }
 
-/* -----------------------
-  루프 초기화 / 시작
-------------------------*/
-function loop() {
-  updatePhysics();
-  updateAnimation();
-  render();
-  requestAnimationFrame(loop);
-}
 
-sprite.onload = () => {
-  createInitialPlatforms();
-  loop();
-};
+
+  function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (const p of platforms) p.render(cameraX);
+
+    const screenX = Math.round(posX - cameraX);
+    const screenY = Math.round(posY);
+    const frame = dinoFrames[currentFrameIndex];
+    const dw = frame.w * scale;
+    const dh = frame.h * scale;
+    const flip = (velX < 0) ? false : true;
+
+    if (flip) {
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.drawImage(sprite, frame.x, frame.y, frame.w, frame.h, -(screenX + dw), screenY, dw, dh);
+      ctx.restore();
+    } else {
+      ctx.drawImage(sprite, frame.x, frame.y, frame.w, frame.h, screenX, screenY, dw, dh);
+    }
+
+    if (isHolding) {
+      const heldMs = Math.max(0, performance.now() - holdStartTime);
+      const charge = Math.max(0, Math.min(1, heldMs / maxChargeMs));
+      const barWidth = 24; const barHeight = 3;
+      const barX = screenX + Math.round((dw - barWidth) / 2);
+      const barY = screenY - 4;
+      ctx.save();
+      ctx.fillStyle = 'black';
+      ctx.fillRect(barX-3, barY-3, barWidth+6, barHeight+6);
+      ctx.fillStyle = 'lime';
+      ctx.fillRect(barX, barY, Math.round(barWidth * charge), barHeight);
+      ctx.restore();
+    }
+
+    if (gameOver && gameOverImageLoaded) {
+      const buttonX = (canvas.width - gameOverButton.screenW) / 2;
+      const buttonY = (canvas.height - gameOverButton.screenH) / 2;
+      ctx.drawImage(gameOverImage, gameOverButton.x, gameOverButton.y, gameOverButton.w, gameOverButton.h, buttonX, buttonY, gameOverButton.screenW, gameOverButton.screenH);
+    }
+
+    drawHUD();
+  }
+
+  function adjustCanvasDisplaySize() {
+    const maxWidth = 800, maxHeight = 360, margin = 16, smallMobileLimit = 480;
+    let displayWidth = Math.min(window.innerWidth - margin, maxWidth);
+    const isTouch = ('ontouchstart' in window) || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isTouch) displayWidth = Math.min(displayWidth, smallMobileLimit);
+    canvas.style.width = displayWidth + 'px';
+    canvas.style.height = Math.round(displayWidth * maxHeight / maxWidth) + 'px';
+  }
+
+  function getCanvasRelativeCoordsFromClient(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const x = (clientX - rect.left) * (canvas.width / rect.width);
+    const y = (clientY - rect.top) * (canvas.height / rect.height);
+    return { x, y };
+  }
+
+  adjustCanvasDisplaySize();
+  window.addEventListener('resize', adjustCanvasDisplaySize);
+  window.addEventListener('orientationchange', () => setTimeout(adjustCanvasDisplaySize, 200));
+
+  canvas.addEventListener('mousedown', (e) => {
+    const pos = getCanvasRelativeCoordsFromClient(e.clientX, e.clientY);
+    if (checkGameOverButtonClick(pos.x, pos.y)) { restartGame(); return; }
+    if (e.button === 0) beginHold();
+  });
+  document.addEventListener('mouseup', (e) => { if (!gameOver) releaseHoldAndJump(); });
+
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const pos = getCanvasRelativeCoordsFromClient(touch.clientX, touch.clientY);
+    if (checkGameOverButtonClick(pos.x, pos.y)) { restartGame(); return; }
+    beginHold();
+  }, {passive:false});
+
+  window.addEventListener('touchend', (e) => { e.preventDefault(); if (!gameOver) releaseHoldAndJump(); }, {passive:false});
+
+  function spawnPlatformAfter(lastX) {
+    const gap = randInt(minGap, maxGap);
+    const tiles = randInt(minTiles, maxTiles);
+    const yOffset = Math.round(randomRange(minYoffset, maxYoffset) / 8) * 8;
+    const topY = baseGroundY() + yOffset;
+    const p = new Platform(lastX + gap, topY, tiles);
+    platforms.push(p);
+    return p;
+  }
+
+  function loop() { updatePhysics(); updateAnimation(); render(); requestAnimationFrame(loop); }
+
+  sprite.onload = () => { createInitialPlatforms(); loop(); };
 
 </script>
 </body>
